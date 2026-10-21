@@ -37,15 +37,20 @@ import (
 
 func main() {
 	var (
-		cfg      runner.Config
-		taskFile string
-		wsFile   string
+		cfg        runner.Config
+		taskFile   string
+		wsFile     string
+		preMounted bool
 	)
 	flag.IntVar(&cfg.Port, "port", runner.DefaultPort, "Port for the probe and guest server")
 	flag.IntVar(&cfg.MetadataPort, "metadata-port", runner.DefaultMetadataPort, "Loopback-only port for the metadata endpoints")
 	flag.StringVar(&taskFile, "task-file", "", "Read the Task YAML from this file instead of AX_TASK_YAML")
 	flag.StringVar(&wsFile, "workspace-file", "", "Read the Workspace YAML from this file instead of AX_WORKSPACE_YAML")
+	flag.BoolVar(&preMounted, "pre-mounted-workspace", false, "Use an already mounted workspace and skip Git/files/bootstrap setup")
 	flag.Parse()
+	if preMounted {
+		_ = os.Setenv("AX_PREMOUNTED_WORKSPACE", "1")
+	}
 
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	slog.SetDefault(logger)

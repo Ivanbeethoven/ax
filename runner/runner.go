@@ -123,7 +123,14 @@ func Run(ctx context.Context, cfg Config) error {
 		_ = metaServer.Stop(context.Background())
 	}()
 
-	if _, err := workspace.SetupWorkspace(ctx, cfg.Workspace, wsPath, ref.GetGoal()); err != nil {
+	if premountedWorkspaceEnabled() {
+		if info, err := os.Stat(wsPath); err != nil || !info.IsDir() {
+			slog.Error("pre-mounted workspace is not a directory", "path", wsPath, "error", err)
+		} else {
+			metaServer.SetWorkspaceReady(true)
+			slog.Info("using pre-mounted workspace; skipping maiden setup", "path", wsPath)
+		}
+	} else if _, err := workspace.SetupWorkspace(ctx, cfg.Workspace, wsPath, ref.GetGoal()); err != nil {
 		slog.Error("workspace maiden run setup failed", "workspace", ref.GetName(), "path", wsPath, "error", err)
 	} else {
 		metaServer.SetWorkspaceReady(true)
@@ -164,6 +171,19 @@ func Run(ctx context.Context, cfg Config) error {
 		reportExit(cfg, cmd, stopCommand(cmd, exited))
 	}
 	return nil
+}
+
+// premountedWorkspaceEnabled enables the opt-in integration path used when a
+// Pod or host has already mounted a filesystem at the task workspace path.
+// AX keeps its normal Git/files/bootstrap behavior unless this is explicitly
+// set to a true value by the custom image or Pod environment.
+func premountedWorkspaceEnabled() bool {
+	switch os.Getenv("AX_PREMOUNTED_WORKSPACE") {
+	case "1", "true", "TRUE", "yes", "YES":
+		return true
+	default:
+		return false
+	}
 }
 
 // stopCommand asks the command's process group to terminate, kills it if it has

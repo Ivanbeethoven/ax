@@ -62,6 +62,18 @@ make push-task-runner      # push it; set TASK_RUNNER_REPO to choose the registr
 
 ## Replacing the default runner
 
+### Pre-mounted workspace integration (opt in)
+
+When the container runtime or Pod has already mounted a workspace at the
+task's workspace path, set `AX_PREMOUNTED_WORKSPACE=1` (or pass
+`--pre-mounted-workspace` to `ax-task-runner`). The runner checks that the
+directory exists, marks it ready, and skips Git cloning, declared-file
+materialization, skills setup, and goal bootstrap. The normal behavior is
+unchanged when the flag is absent. AX still supplies the task contract and
+supervises the command; the storage mount and its ownership remain the
+responsibility of the Pod/runtime. This mode does not relax AX's per-task
+sandbox isolation or provide shared-volume coordination.
+
 There are three levels of customization. Pick the shallowest one that solves your problem.
 
 ### 1. Extend the default image
