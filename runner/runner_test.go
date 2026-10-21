@@ -294,3 +294,41 @@ func TestRun_SetsUpBoundWorkspace(t *testing.T) {
 		t.Errorf("workspace endpoint should serve the bound workspace:\n%s", body)
 	}
 }
+
+func TestRun_UsesPreMountedWorkspaceWithoutSetup(t *testing.T) {
+	h := newHarness(t)
+	t.Setenv("AX_PREMOUNTED_WORKSPACE", "1")
+	if err := os.MkdirAll(h.wsPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	seed := filepath.Join(h.wsPath, "from-brewfs.txt")
+	if err := os.WriteFile(seed, []byte("mounted content\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	outFile := filepath.Join(t.TempDir(), "out.txt")
+	h.task.Spec.Command = []string{"sh", "-c", "cat from-brewfs.txt > " + outFile}
+
+	exit := h.runUntilCommandExits(t)
+	if exit.Err != nil || exit.ExitCode != 0 {
+		t.Fatalf("unexpected exit: %+v", exit)
+	}
+	out, err := os.ReadFile(outFile)
+	if err != nil {
+		t.Fatalf("task could not read pre-mounted content: %v", err)
+	}
+	if string(out) != "mounted content\n" {
+		t.Errorf("task read %q, want mounted content", out)
+	}
+	resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/readyz", h.cfg.Port))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("readyz = %d, want 200", resp.StatusCode)
+	}
+	marker := filepath.Join(workspace.AXDir, workspace.MarkerName(h.wsPath))
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Errorf("pre-mounted setup unexpectedly wrote marker %s: %v", marker, err)
+	}
+}
