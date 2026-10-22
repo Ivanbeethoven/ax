@@ -114,6 +114,8 @@ func main() {
 		err = runApply(serverURL, atespaceFlag, cleanArgs)
 	case "get":
 		err = runGet(serverURL, atespace, cleanArgs)
+	case "workspace":
+		err = runWorkspace(serverURL, atespace, cleanArgs)
 	case "describe":
 		err = runDescribe(serverURL, atespace, cleanArgs)
 	case "watch":
@@ -213,6 +215,8 @@ Available Commands:
   get workspace <name>    Get a specific workspace
   get models              List models
   get model <name>        Get a specific model
+  workspace fork <parent> <name>
+                          Fork a native BrewFS workspace and wait for its StorageClass
   describe task <name>    Show detailed information about a task
   describe workspace <name> Show detailed information about a workspace
   describe model <name>   Show detailed information about a model
@@ -233,6 +237,28 @@ Flags:
   -n, --namespace string      Kubernetes namespace where AX is installed (default: "ax-system")
   --context string            Kubernetes context (defaults to active kubectx / current-context)
   --server string             AX API server address (default: auto-detected from kube context or $AX_SERVER)`)
+}
+
+func runWorkspace(serverURL, atespace string, args []string) error {
+	if len(args) != 3 || args[0] != "fork" {
+		return fmt.Errorf("usage: ax workspace fork <parent> <name>")
+	}
+	client, conn, err := getAXClient(serverURL)
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	workspace, err := client.ForkWorkspace(ctx, &v1alpha1.ForkWorkspaceRequest{
+		Atespace:   atespace,
+		ParentName: args[1],
+		Name:       args[2],
+	})
+	if err != nil {
+		return fmt.Errorf("forking workspace %q as %q: %w", args[1], args[2], err)
+	}
+	return yaml.NewEncoder(os.Stdout).Encode(workspace)
 }
 
 func getAXClient(serverURL string) (v1alpha1.AXClient, *grpc.ClientConn, error) {

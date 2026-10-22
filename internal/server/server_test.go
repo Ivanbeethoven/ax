@@ -308,6 +308,48 @@ func TestCreateTask_ValidatesWorkspaceBinding(t *testing.T) {
 	}
 }
 
+type fakeWorkspaceForker struct {
+	result server.ForkResult
+	parent string
+	child  string
+}
+
+func (f *fakeWorkspaceForker) Fork(_ context.Context, _ string, parentName, childName string) (server.ForkResult, error) {
+	f.parent, f.child = parentName, childName
+	return f.result, nil
+}
+
+func TestServer_ForkWorkspaceStoresExternalStorageClass(t *testing.T) {
+	st := memory.NewStore()
+	if err := st.SaveWorkspace(context.Background(), &v1alpha1.Workspace{
+		Metadata: &v1alpha1.ObjectMeta{Name: "parent", Atespace: "default"},
+		Spec:     &v1alpha1.WorkspaceSpec{},
+	}); err != nil {
+		t.Fatalf("save parent: %v", err)
+	}
+	forker := &fakeWorkspaceForker{result: server.ForkResult{WorkspaceID: "child-id", StorageClassName: "brewfs-child"}}
+	srv := server.NewServer(st, server.Options{Forker: forker})
+	child, err := srv.ForkWorkspace(context.Background(), &v1alpha1.ForkWorkspaceRequest{
+		Atespace: "default", ParentName: "parent", Name: "child",
+	})
+	if err != nil {
+		t.Fatalf("ForkWorkspace: %v", err)
+	}
+	if forker.parent != "parent" || forker.child != "child" {
+		t.Fatalf("forker received %q/%q", forker.parent, forker.child)
+	}
+	if child.GetMetadata().GetName() != "child" || child.GetSpec().GetExternalStorageClassName() != "brewfs-child" {
+		t.Fatalf("unexpected child workspace: %+v", child)
+	}
+	stored, err := st.GetWorkspace(context.Background(), "default", "child")
+	if err != nil {
+		t.Fatalf("get child: %v", err)
+	}
+	if stored.GetSpec().GetExternalStorageClassName() != "brewfs-child" {
+		t.Fatalf("stored child lost StorageClass: %+v", stored)
+	}
+}
+
 type fakeReconciler struct {
 	reconcileCount      int
 	reconcileErr        error

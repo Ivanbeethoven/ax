@@ -33,6 +33,12 @@ rules:
   - apiGroups: [""]
     resources: ["secrets"]
     verbs: ["get", "list", "watch"]
+  - apiGroups: ["storage.brewfs.io"]
+    resources: ["brewfsworkspaceforks"]
+    verbs: ["create", "get", "watch", "delete"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses"]
+    verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
@@ -84,6 +90,11 @@ spec:
               value: "atenet-router.ate-system.svc.cluster.local:80"
             - name: AX_SNAPSHOTS_BUCKET
               value: "gs://dberkov-gke-dev3/ate-env/"
+            # The fork RPC creates the operator-owned CR in this namespace.
+            - name: BREWFS_NAMESPACE
+              value: "default"
+            - name: BREWFS_CLUSTER_NAME
+              value: "brewfs"
           ports:
             - containerPort: 8080
               name: http

@@ -42,6 +42,7 @@ type Reconciler interface {
 type Options struct {
 	Locker     lock.Locker
 	Reconciler Reconciler
+	Forker     WorkspaceForker
 }
 
 // Server provides the gRPC API for AX.
@@ -50,6 +51,7 @@ type Server struct {
 	store      store.Store
 	locker     lock.Locker
 	reconciler Reconciler
+	forker     WorkspaceForker
 	grpcServer *grpc.Server
 }
 
@@ -63,11 +65,17 @@ func NewServer(s store.Store, opts ...Options) *Server {
 	if locker == nil {
 		locker = lock.NewMemoryLocker()
 	}
+	if opt.Forker == nil {
+		if forker, err := NewInClusterWorkspaceForker(); err == nil {
+			opt.Forker = forker
+		}
+	}
 
 	srv := &Server{
 		store:      s,
 		locker:     locker,
 		reconciler: opt.Reconciler,
+		forker:     opt.Forker,
 		grpcServer: grpc.NewServer(),
 	}
 	v1alpha1.RegisterAXServer(srv.grpcServer, srv)
@@ -431,6 +439,71 @@ func (s *Server) WatchTask(req *v1alpha1.WatchTaskRequest, stream grpc.ServerStr
 }
 
 // --- Workspaces ---
+
+func (s *Server) ForkWorkspace(ctx context.Context, req *v1alpha1.ForkWorkspaceRequest) (*v1alpha1.Workspace, error) {
+	if req == nil || req.ParentName == "" || req.Name == "" {
+		return nil, status.Error(codes.InvalidArgument, "parentName and name are required")
+	}
+	atespace := req.Atespace
+	if atespace == "" {
+		atespace = "default"
+	}
+	if req.ParentName == req.Name {
+		return nil, status.Error(codes.InvalidArgument, "fork name must differ from parent")
+	}
+	parent, err := s.store.GetWorkspace(ctx, atespace, req.ParentName)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return nil, status.Errorf(codes.NotFound, "workspace %q not found in atespace %q", req.ParentName, atespace)
+		}
+		return nil, status.Errorf(codes.Internal, "getting parent workspace: %v", err)
+	}
+	if _, err := s.store.GetWorkspace(ctx, atespace, req.Name); err == nil {
+		return nil, status.Errorf(codes.AlreadyExists, "workspace %q already exists in atespace %q", req.Name, atespace)
+	} else if !errors.Is(err, store.ErrNotFound) {
+		return nil, status.Errorf(codes.Internal, "checking fork workspace: %v", err)
+	}
+	if s.forker == nil {
+		return nil, status.Error(codes.FailedPrecondition, "BrewFS workspace forking is not configured")
+	}
+	first, second := req.ParentName, req.Name
+	if second < first {
+		first, second = second, first
+	}
+	unlockFirst, err := s.locker.Lock(ctx, "workspace", atespace, first)
+	if err != nil {
+		return nil, status.Errorf(codes.Aborted, "locking workspace %s/%s: %v", atespace, first, err)
+	}
+	defer unlockFirst()
+	if second != first {
+		unlockSecond, err := s.locker.Lock(ctx, "workspace", atespace, second)
+		if err != nil {
+			return nil, status.Errorf(codes.Aborted, "locking workspace %s/%s: %v", atespace, second, err)
+		}
+		defer unlockSecond()
+	}
+	result, err := s.forker.Fork(ctx, atespace, req.ParentName, req.Name)
+	if err != nil {
+		return nil, status.Errorf(codes.FailedPrecondition, "forking BrewFS workspace: %v", err)
+	}
+	child := proto.Clone(parent).(*v1alpha1.Workspace)
+	child.Metadata = &v1alpha1.ObjectMeta{
+		Name:       req.Name,
+		Atespace:   atespace,
+		CreateTime: timestamppb.Now(),
+	}
+	if child.Spec == nil {
+		child.Spec = &v1alpha1.WorkspaceSpec{}
+	}
+	child.Spec.ExternalStorageClassName = result.StorageClassName
+	if err := v1alpha1.ValidateWorkspace(child); err != nil {
+		return nil, status.Errorf(codes.Internal, "fork produced invalid workspace: %v", err)
+	}
+	if err := s.store.SaveWorkspace(ctx, child); err != nil {
+		return nil, status.Errorf(codes.Internal, "saving fork workspace: %v", err)
+	}
+	return child, nil
+}
 
 func (s *Server) GetWorkspace(ctx context.Context, req *v1alpha1.GetWorkspaceRequest) (*v1alpha1.Workspace, error) {
 	if req == nil {

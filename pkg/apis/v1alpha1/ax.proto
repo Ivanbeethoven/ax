@@ -38,6 +38,7 @@ service AX {
 
   // Workspaces
   rpc GetWorkspace(GetWorkspaceRequest) returns (Workspace);
+  rpc ForkWorkspace(ForkWorkspaceRequest) returns (Workspace);
   rpc ListWorkspaces(ListWorkspacesRequest) returns (ListWorkspacesResponse);
   rpc UpdateWorkspace(UpdateWorkspaceRequest) returns (Workspace);
   rpc DeleteWorkspace(DeleteWorkspaceRequest) returns (DeleteWorkspaceResponse);
@@ -262,6 +263,12 @@ message WatchTaskResponse {
 message GetWorkspaceRequest {
   string atespace = 1;
   string name = 2;
+}
+
+message ForkWorkspaceRequest {
+  string atespace = 1;
+  string parent_name = 2;
+  string name = 3;
 }
 
 message ListWorkspacesRequest {
