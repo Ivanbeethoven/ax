@@ -235,6 +235,32 @@ func TestBuildActorTemplate(t *testing.T) {
 	}
 }
 
+func TestBuildActorTemplateWithStorageClass(t *testing.T) {
+	tmpl := BuildActorTemplateWithStorageClass("default", "brewfs-template", "", nil, nil, "", nil, "brewfs-workspace-example")
+	if got := tmpl.GetVolumes(); len(got) != 1 {
+		t.Fatalf("expected one workspace volume, got %d", len(got))
+	} else {
+		volume := got[0]
+		if volume.GetDurableDir() != nil {
+			t.Fatal("external workspace unexpectedly used durableDir")
+		}
+		ext := volume.GetExternalVolumeTemplate()
+		if ext == nil {
+			t.Fatal("expected external volume template")
+		}
+		if ext.GetStorageClassName() != "brewfs-workspace-example" {
+			t.Errorf("unexpected storage class %q", ext.GetStorageClassName())
+		}
+		if ext.GetCapacity() != "1Gi" {
+			t.Errorf("unexpected capacity %q", ext.GetCapacity())
+		}
+	}
+	defaultTemplate := BuildActorTemplate("default", "durable-template", "", nil, nil, "", nil)
+	if defaultTemplate.GetVolumes()[0].GetDurableDir() == nil {
+		t.Fatal("empty storage class changed the durableDir default")
+	}
+}
+
 func TestClient_ResumeActor_WorkerPodIpsAndRetry(t *testing.T) {
 	oldInterval := defaultRetryInterval
 	defaultRetryInterval = 5 * time.Millisecond

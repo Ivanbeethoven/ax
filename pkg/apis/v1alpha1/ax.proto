@@ -135,6 +135,12 @@ message WorkspaceSpec {
   repeated File files = 2;
   MCPConfig mcp = 3;
   SkillsConfig skills = 4;
+  // external_storage_class_name selects a pre-provisioned Kubernetes
+  // StorageClass for the workspace volume. When empty, AX keeps the default
+  // durableDir workspace. The StorageClass maps this workspace to its
+  // immutable BrewFS volume identity; the CSI lease remains the sole-writer
+  // guard.
+  string external_storage_class_name = 5;
 }
 
 message GitRepo {

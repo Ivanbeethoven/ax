@@ -135,9 +135,10 @@ The BrewFS operator would need to:
 3. Enforce one lease owner per workspace, track mount references, and make
    cleanup/restart behavior explicit. A node restart must release or recover
    the lease before another node can mount.
-4. Add an AX/operator integration that selects the workspace-specific external
-   volume. The current `BuildActorTemplate` hard-codes `durableDir`, so this
-   cannot be achieved by changing only the runner image.
+4. Configure the AX workspace with `spec.externalStorageClassName`, selecting
+   the immutable workspace-specific StorageClass. AX emits Substrate's
+   `externalVolumeTemplate` for that workspace; the empty field keeps
+   `durableDir`.
 5. Keep `agent.containers` as the simpler option for multiple agents: one
    operator mount pod, one lease, and many cooperating containers.
 
@@ -148,8 +149,8 @@ propagation test; they do not remove the lease constraint.
 ## Validation status
 
 The runner's pre-mounted behavior has a unit test and can be built/tested with
-the pinned Go toolchain in Docker. A real Kubernetes + Agent Substrate test of
-the CSI bridge is blocked: BrewFS has no CSI driver, the AX API does not yet
-carry a workspace volume identity, and the previous test server was
-decommissioned. No cluster or BrewFS product changes are claimed by this
-branch.
+the pinned Go toolchain in Docker. The AX bridge is implemented and unit-tested;
+a real Kubernetes + Agent Substrate test requires the BrewFS CSI controller,
+node resources, and one immutable workspace-specific StorageClass. Concurrent
+writable actors, crash takeover, and multi-node lease recovery remain outside
+this bridge.

@@ -313,6 +313,13 @@ func ResourceLimits(reqs *v1alpha1.ResourcesSpec) *ateapipb.Resources {
 // BuildActorTemplate constructs a Substrate ActorTemplate based on the standard ate-env specification.
 // A nil resources leaves the sandbox sized by the worker defaults.
 func BuildActorTemplate(atespace, name, image string, envMap map[string]string, command []string, snapshotsBucket string, resources *ateapipb.Resources) *ateapipb.ActorTemplate {
+	return BuildActorTemplateWithStorageClass(atespace, name, image, envMap, command, snapshotsBucket, resources, "")
+}
+
+// BuildActorTemplateWithStorageClass constructs the standard actor template,
+// selecting an external CSI volume for the workspace when storageClassName is
+// set. An empty storage class preserves the durableDir behavior.
+func BuildActorTemplateWithStorageClass(atespace, name, image string, envMap map[string]string, command []string, snapshotsBucket string, resources *ateapipb.Resources, storageClassName string) *ateapipb.ActorTemplate {
 	if atespace == "" {
 		atespace = "default"
 	}
@@ -338,6 +345,16 @@ func BuildActorTemplate(atespace, name, image string, envMap map[string]string, 
 		})
 	}
 
+	workspaceVolume := &ateapipb.Volume{Name: "workspace"}
+	if storageClassName == "" {
+		workspaceVolume.DurableDir = &ateapipb.DurableDirVolumeSource{}
+	} else {
+		workspaceVolume.ExternalVolumeTemplate = &ateapipb.ExternalVolumeTemplate{
+			Capacity:         "1Gi",
+			StorageClassName: storageClassName,
+		}
+	}
+
 	return &ateapipb.ActorTemplate{
 		Metadata: &ateapipb.ResourceMetadata{
 			Name:     name,
@@ -359,10 +376,7 @@ func BuildActorTemplate(atespace, name, image string, envMap map[string]string, 
 				MountPath: "/workspace",
 			}},
 		}},
-		Volumes: []*ateapipb.Volume{{
-			Name:       "workspace",
-			DurableDir: &ateapipb.DurableDirVolumeSource{},
-		}},
+		Volumes: []*ateapipb.Volume{workspaceVolume},
 		SnapshotConfig: &ateapipb.SnapshotConfig{
 			StorageLocation:   snapshotsBucket,
 			PreferredFidelity: ateapipb.SnapshotFidelity_SNAPSHOT_FIDELITY_VOLUMES,
@@ -378,6 +392,14 @@ func BuildActorTemplate(atespace, name, image string, envMap map[string]string, 
 // EnsureActorTemplateWithImage creates an ActorTemplate using the specified container image,
 // resource limits (nil for worker defaults), and optional environment variables.
 func (c *Client) EnsureActorTemplateWithImage(ctx context.Context, baseAtespace, baseTemplate, targetAtespace, targetTemplate, image string, resources *ateapipb.Resources, extraEnv ...map[string]string) (*ateapipb.ActorTemplate, error) {
+	return c.EnsureActorTemplateWithImageAndStorageClass(ctx, baseAtespace, baseTemplate, targetAtespace, targetTemplate, image, resources, "", extraEnv...)
+}
+
+// EnsureActorTemplateWithImageAndStorageClass is the opt-in external-volume
+// variant of EnsureActorTemplateWithImage. The base template arguments remain
+// for API compatibility; the generated template owns the selected workspace
+// volume definition.
+func (c *Client) EnsureActorTemplateWithImageAndStorageClass(ctx context.Context, baseAtespace, baseTemplate, targetAtespace, targetTemplate, image string, resources *ateapipb.Resources, storageClassName string, extraEnv ...map[string]string) (*ateapipb.ActorTemplate, error) {
 	existing, err := c.GetActorTemplate(ctx, targetAtespace, targetTemplate)
 	if err == nil && existing != nil {
 		return existing, nil
@@ -390,7 +412,7 @@ func (c *Client) EnsureActorTemplateWithImage(ctx context.Context, baseAtespace,
 		}
 	}
 
-	tmpl := BuildActorTemplate(targetAtespace, targetTemplate, image, envMap, nil, "", resources)
+	tmpl := BuildActorTemplateWithStorageClass(targetAtespace, targetTemplate, image, envMap, nil, "", resources, storageClassName)
 	req := &ateapipb.CreateActorTemplateRequest{
 		ActorTemplate: tmpl,
 	}

@@ -81,7 +81,16 @@ spec:
       - provider: google
         query: "skills.tags:nodejs"
     path: "/.agents/skills"
+  # Optional: select a pre-created external volume (for example a BrewFS CSI
+  # StorageClass). Empty keeps the default actor-private durableDir.
+  externalStorageClassName: "brewfs-workspace-example"
 ```
+
+`externalStorageClassName` is an explicit opt-in. AX passes the named
+StorageClass to Substrate's `externalVolumeTemplate` with a 1Gi capacity. The
+StorageClass parameters, rather than AX, identify the workspace. A writable
+BrewFS workspace still has one lease-owning mount; do not bind the same class
+to independent concurrent actors.
 
 
 ## Model

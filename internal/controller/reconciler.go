@@ -190,7 +190,11 @@ func (r *TaskReconciler) Reconcile(ctx context.Context, task *v1alpha1.Task, ws 
 
 		// spec.resources rides along in AX_TASK_YAML, so a limits change is already
 		// part of the template digest and re-provisions the template.
-		tmpl, err := r.client.EnsureActorTemplateWithImage(ctx, templateAtespace, templateName, atespace, customTemplateName, task.Spec.Image, resources, extraEnv)
+		storageClassName := ""
+		if ws != nil && ws.GetSpec() != nil {
+			storageClassName = ws.GetSpec().GetExternalStorageClassName()
+		}
+		tmpl, err := r.client.EnsureActorTemplateWithImageAndStorageClass(ctx, templateAtespace, templateName, atespace, customTemplateName, task.Spec.Image, resources, storageClassName, extraEnv)
 		if err != nil {
 			if substrate.IsTransientError(err) {
 				r.setNotReady(task, "SubstrateUnavailable", err.Error(), now)
