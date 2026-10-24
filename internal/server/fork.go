@@ -94,7 +94,12 @@ func (t bearerTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	return t.base.RoundTrip(clone)
 }
 
-func (f *KubernetesWorkspaceForker) Fork(ctx context.Context, _ string, parentName, childName string) (ForkResult, error) {
+func (f *KubernetesWorkspaceForker) Fork(ctx context.Context, atespace string, parentName, childName string) (ForkResult, error) {
+	// This forker serves a single BrewFS namespace. Only the identically named
+	// AX atespace may use it; workspace names are not unique across tenants.
+	if atespace == "" || f.namespace == "" || atespace != f.namespace {
+		return ForkResult{}, fmt.Errorf("atespace %q is not authorized for BrewFS namespace %q: a nonempty matching atespace is required", atespace, f.namespace)
+	}
 	if parentName == "" || childName == "" {
 		return ForkResult{}, errors.New("parent and child workspace names are required")
 	}

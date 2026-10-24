@@ -91,6 +91,7 @@ spec:
             - name: AX_SNAPSHOTS_BUCKET
               value: "gs://dberkov-gke-dev3/ate-env/"
             # The fork RPC creates the operator-owned CR in this namespace.
+            # Only the AX atespace with the same name may fork here.
             - name: BREWFS_NAMESPACE
               value: "default"
             - name: BREWFS_CLUSTER_NAME
