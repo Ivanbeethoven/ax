@@ -482,6 +482,12 @@ func (s *Server) ForkWorkspace(ctx context.Context, req *v1alpha1.ForkWorkspaceR
 		}
 		defer unlockSecond()
 	}
+	// A concurrent fork may have created the child while we waited for the locks.
+	if _, err := s.store.GetWorkspace(ctx, atespace, req.Name); err == nil {
+		return nil, status.Errorf(codes.AlreadyExists, "workspace %q already exists in atespace %q", req.Name, atespace)
+	} else if !errors.Is(err, store.ErrNotFound) {
+		return nil, status.Errorf(codes.Internal, "checking fork workspace: %v", err)
+	}
 	result, err := s.forker.Fork(ctx, atespace, req.ParentName, req.Name)
 	if err != nil {
 		return nil, status.Errorf(codes.FailedPrecondition, "forking BrewFS workspace: %v", err)
