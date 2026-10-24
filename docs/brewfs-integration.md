@@ -154,3 +154,25 @@ a real Kubernetes + Agent Substrate test requires the BrewFS CSI controller,
 node resources, and one immutable workspace-specific StorageClass. Concurrent
 writable actors, crash takeover, and multi-node lease recovery remain outside
 this bridge.
+
+### Fork failure ownership
+
+AX owns a fork for rollback only when its create response supplies the CR UID.
+A 409 retry may read a matching existing fork but never acquires deletion
+ownership. Until the AX child record is saved, operator/poll failures, request
+cancellation, validation errors, and datastore failures trigger rollback.
+
+Rollback checks the UID and requested namespace/cluster/source/child identity,
+then deletes with UID and resourceVersion preconditions. It uses a separate
+two-minute context even if the request was cancelled. AX waits for the fork CR
+to disappear: the operator's fork finalizer removes the child workspace before
+its source snapshot, then the StorageClass, and finally releases the CR. AX
+must not directly delete these operator-owned resources or remove finalizers.
+This relies on the fork finalizer contract in the workspace-fork operator.
+
+Cleanup is best-effort. Rejected deletion, identity changes, and finalizer
+failure/timeout are returned alongside the original error; they never turn a
+failed fork into success. If the create response cannot establish a UID, AX
+reports that cleanup is unavailable rather than risking deletion of another
+request's resources. Failed finalization remains visible on the terminating CR
+for operator reconciliation and diagnosis.

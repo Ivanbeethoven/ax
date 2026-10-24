@@ -34,11 +34,12 @@ func TestKubernetesWorkspaceForkerTenantNamespace(t *testing.T) {
 						t.Errorf("POST path = %q, want %q", r.URL.Path, prefix)
 					}
 					w.WriteHeader(http.StatusCreated)
+					_, _ = w.Write([]byte(`{"metadata":{"uid":"owned-uid"}}`))
 				case http.MethodGet:
 					if r.URL.Path != prefix+"/child" {
 						t.Errorf("GET path = %q, want child in %q", r.URL.Path, prefix)
 					}
-					_ = json.NewEncoder(w).Encode(map[string]any{"metadata": map[string]string{"namespace": tt.namespace}, "spec": map[string]any{
+					_ = json.NewEncoder(w).Encode(map[string]any{"metadata": map[string]string{"namespace": tt.namespace, "uid": "owned-uid"}, "spec": map[string]any{
 						"clusterRef":         map[string]string{"name": "cluster"},
 						"sourceWorkspaceRef": map[string]string{"name": "parent"},
 						"workspaceName":      "child",

@@ -17,6 +17,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -503,10 +504,10 @@ func (s *Server) ForkWorkspace(ctx context.Context, req *v1alpha1.ForkWorkspaceR
 	}
 	child.Spec.ExternalStorageClassName = result.StorageClassName
 	if err := v1alpha1.ValidateWorkspace(child); err != nil {
-		return nil, status.Errorf(codes.Internal, "fork produced invalid workspace: %v", err)
+		return nil, status.Errorf(codes.Internal, "%v", errors.Join(fmt.Errorf("fork produced invalid workspace: %w", err), result.rollback.cleanup(ctx)))
 	}
 	if err := s.store.SaveWorkspace(ctx, child); err != nil {
-		return nil, status.Errorf(codes.Internal, "saving fork workspace: %v", err)
+		return nil, status.Errorf(codes.Internal, "%v", errors.Join(fmt.Errorf("saving fork workspace: %w", err), result.rollback.cleanup(ctx)))
 	}
 	return child, nil
 }
