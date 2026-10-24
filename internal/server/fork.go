@@ -141,9 +141,14 @@ func (f *KubernetesWorkspaceForker) Fork(ctx context.Context, atespace string, p
 		deadline = time.Now().Add(10 * time.Minute)
 	}
 	for time.Now().Before(deadline) {
-		result, phase, message, err := f.getFork(ctx, path)
+		result, phase, message, identity, err := f.getFork(ctx, path)
 		if err != nil {
 			return ForkResult{}, err
+		}
+		// Validate the same response whose status we consume, on every poll: a
+		// fork may be changed or replaced while we wait for it to become ready.
+		if identity.Namespace != f.namespace || identity.ClusterName != f.clusterName || identity.SourceWorkspace != parentName || identity.WorkspaceName != childName {
+			return ForkResult{}, fmt.Errorf("BrewFSWorkspaceFork %q conflict: existing fork identity does not match requested namespace %q, cluster %q, source %q, workspace %q", childName, f.namespace, f.clusterName, parentName, childName)
 		}
 		switch phase {
 		case "Ready":
@@ -163,20 +168,39 @@ func (f *KubernetesWorkspaceForker) Fork(ctx context.Context, atespace string, p
 	return ForkResult{}, fmt.Errorf("timed out waiting for BrewFSWorkspaceFork %q", childName)
 }
 
-func (f *KubernetesWorkspaceForker) getFork(ctx context.Context, path string) (ForkResult, string, string, error) {
+type forkIdentity struct {
+	Namespace       string
+	ClusterName     string
+	SourceWorkspace string
+	WorkspaceName   string
+}
+
+func (f *KubernetesWorkspaceForker) getFork(ctx context.Context, path string) (ForkResult, string, string, forkIdentity, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, f.baseURL+path, nil)
 	if err != nil {
-		return ForkResult{}, "", "", err
+		return ForkResult{}, "", "", forkIdentity{}, err
 	}
 	response, err := f.client.Do(request)
 	if err != nil {
-		return ForkResult{}, "", "", fmt.Errorf("get BrewFSWorkspaceFork: %w", err)
+		return ForkResult{}, "", "", forkIdentity{}, fmt.Errorf("get BrewFSWorkspaceFork: %w", err)
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return ForkResult{}, "", "", fmt.Errorf("get BrewFSWorkspaceFork: Kubernetes returned %s", response.Status)
+		return ForkResult{}, "", "", forkIdentity{}, fmt.Errorf("get BrewFSWorkspaceFork: Kubernetes returned %s", response.Status)
 	}
 	var object struct {
+		Metadata struct {
+			Namespace string `json:"namespace"`
+		} `json:"metadata"`
+		Spec struct {
+			ClusterRef struct {
+				Name string `json:"name"`
+			} `json:"clusterRef"`
+			SourceWorkspaceRef struct {
+				Name string `json:"name"`
+			} `json:"sourceWorkspaceRef"`
+			WorkspaceName string `json:"workspaceName"`
+		} `json:"spec"`
 		Status struct {
 			Phase            string `json:"phase"`
 			Message          string `json:"message"`
@@ -185,7 +209,8 @@ func (f *KubernetesWorkspaceForker) getFork(ctx context.Context, path string) (F
 		} `json:"status"`
 	}
 	if err := json.NewDecoder(response.Body).Decode(&object); err != nil {
-		return ForkResult{}, "", "", fmt.Errorf("decode BrewFSWorkspaceFork: %w", err)
+		return ForkResult{}, "", "", forkIdentity{}, fmt.Errorf("decode BrewFSWorkspaceFork: %w", err)
 	}
-	return ForkResult{WorkspaceID: object.Status.WorkspaceID, StorageClassName: object.Status.StorageClassName}, object.Status.Phase, object.Status.Message, nil
+	identity := forkIdentity{Namespace: object.Metadata.Namespace, ClusterName: object.Spec.ClusterRef.Name, SourceWorkspace: object.Spec.SourceWorkspaceRef.Name, WorkspaceName: object.Spec.WorkspaceName}
+	return ForkResult{WorkspaceID: object.Status.WorkspaceID, StorageClassName: object.Status.StorageClassName}, object.Status.Phase, object.Status.Message, identity, nil
 }
