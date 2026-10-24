@@ -38,7 +38,11 @@ func TestKubernetesWorkspaceForkerTenantNamespace(t *testing.T) {
 					if r.URL.Path != prefix+"/child" {
 						t.Errorf("GET path = %q, want child in %q", r.URL.Path, prefix)
 					}
-					_ = json.NewEncoder(w).Encode(map[string]any{"status": map[string]string{
+					_ = json.NewEncoder(w).Encode(map[string]any{"metadata": map[string]string{"namespace": tt.namespace}, "spec": map[string]any{
+						"clusterRef":         map[string]string{"name": "cluster"},
+						"sourceWorkspaceRef": map[string]string{"name": "parent"},
+						"workspaceName":      "child",
+					}, "status": map[string]string{
 						"phase": "Ready", "workspaceId": "child-id", "storageClassName": "brewfs-child",
 					}})
 				default:

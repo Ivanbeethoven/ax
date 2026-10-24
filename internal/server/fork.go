@@ -135,24 +135,20 @@ func (f *KubernetesWorkspaceForker) Fork(ctx context.Context, atespace string, p
 	if response.StatusCode != http.StatusCreated && response.StatusCode != http.StatusOK && response.StatusCode != http.StatusConflict {
 		return ForkResult{}, fmt.Errorf("create BrewFSWorkspaceFork: Kubernetes returned %s", response.Status)
 	}
-	if response.StatusCode == http.StatusConflict {
-		_, _, _, identity, err := f.getFork(ctx, path)
-		if err != nil {
-			return ForkResult{}, fmt.Errorf("verify existing BrewFSWorkspaceFork after conflict: %w", err)
-		}
-		if (identity.Namespace != "" && identity.Namespace != f.namespace) || identity.ClusterName != f.clusterName || identity.SourceWorkspace != parentName || identity.WorkspaceName != childName {
-			return ForkResult{}, fmt.Errorf("BrewFSWorkspaceFork %q conflict: existing fork identity does not match requested cluster %q, source %q, workspace %q", childName, f.clusterName, parentName, childName)
-		}
-	}
 
 	deadline, hasDeadline := ctx.Deadline()
 	if !hasDeadline {
 		deadline = time.Now().Add(10 * time.Minute)
 	}
 	for time.Now().Before(deadline) {
-		result, phase, message, _, err := f.getFork(ctx, path)
+		result, phase, message, identity, err := f.getFork(ctx, path)
 		if err != nil {
 			return ForkResult{}, err
+		}
+		// Validate the same response whose status we consume, on every poll: a
+		// fork may be changed or replaced while we wait for it to become ready.
+		if identity.Namespace != f.namespace || identity.ClusterName != f.clusterName || identity.SourceWorkspace != parentName || identity.WorkspaceName != childName {
+			return ForkResult{}, fmt.Errorf("BrewFSWorkspaceFork %q conflict: existing fork identity does not match requested namespace %q, cluster %q, source %q, workspace %q", childName, f.namespace, f.clusterName, parentName, childName)
 		}
 		switch phase {
 		case "Ready":
